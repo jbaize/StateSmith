@@ -10,3 +10,6 @@ example-output/render2
 
 src/StateSmith.CliTest/Run/examples/1/statesmith.runinfo.json
 
+artifacts/win-x64/StateSmith.Cli.exe
+artifacts/win-x64/ss.cli.exe
+artifacts/test/ss.cli.exe

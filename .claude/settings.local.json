@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet --list-sdks:*)",
+      "Bash(dotnet --list-runtimes:*)",
+      "Bash(set DOTNET_ROLL_FORWARD=LatestMajor)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd multi-state-machine support per draw.io file\n\nEnable multiple $STATEMACHINE nodes across draw.io pages with a shared\nEventId enum containing the union of all events. Each SM generates\nseparate code files while sharing the same event enumeration.\n\n- Add MultiSmRunner orchestrator with two-phase processing \\(event\n  collection then code generation with shared events injected via DI\\)\n- Add SharedEventSet to hold unified events across all SMs in a file\n- Modify EnumBuilder to use shared event set when available\n- Add GetAllStateMachineNames\\(\\) to InputSmBuilder for SM discovery\n- Auto-detect multi-SM files in DiagramRunner and delegate accordingly\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(build.bat:*)",
+      "Bash(cmd /c \"D:\\\\StateSmith\\\\StateSmithtree\\\\build.bat\")",
+      "Bash(./ss.cli.exe run:*)",
+      "Bash(ls:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix multi-SM $CONFIG : toml settings reading\n\nThe multi-SM support didn''t correctly read $CONFIG : toml settings from\ndiagram files. MultiSmRunner now resolves transpilerId from toml config\nby creating a temporary SmRunner targeting the first SM, allowing\nPreDiagramSettingsReader to work with multi-SM files.\n\nAlso fixes TomlConfigVerticesProcessor to remove toml config vertices\nfrom ALL root-level SMs \\(not just the selected one\\), preventing\nRenderConfigVerticesProcessor from choking on unprocessed configs.\n\n- Add ResolveTranspilerId\\(\\) to MultiSmRunner using temp SmRunner\n- Remove early NotYetSet bail-out in DiagramRunner.RunMultiSmDiagramFile\\(\\)\n- Extend TomlConfigVerticesProcessor to clean up other SMs'' toml configs\n- Fix DiagramBasedSettingsPreventer for new constructor signature\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
