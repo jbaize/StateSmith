@@ -1,5 +1,6 @@
 using StateSmith.Output;
 using StateSmith.Runner;
+using StateSmith.Input.DrawIo;
 using StateSmith.SmGraph;
 using System;
 using System.Collections.Generic;
@@ -152,25 +153,77 @@ public class DiagramRunner
         }
 
         var discoveryRunner = new SmRunner(settings: BuildBaseRunnerSettings(absolutePath), renderConfig: null, callerFilePath: callerFilePath);
-        var inputSmBuilder = discoveryRunner.GetExperimentalAccess().InputSmBuilder;
-        inputSmBuilder.ConvertDiagramFileToSmVertices(absolutePath);
 
-        var diagramVerticesProvider = discoveryRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<IDiagramVerticesProvider>();
-        var stateMachineNames = diagramVerticesProvider.GetRootVertices().OfType<StateMachine>().Select(sm => sm.Name).OrderBy(x => x).ToList();
-        if (stateMachineNames.Count <= 1)
+        try
         {
-            return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: new HashSet<string>());
+            var inputSmBuilder = discoveryRunner.GetExperimentalAccess().InputSmBuilder;
+            var diagramVerticesProvider = discoveryRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<IDiagramVerticesProvider>();
+            var drawIoConverter = discoveryRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<DrawIoToSmDiagramConverter>();
+            var diagrams = ReadDrawIoDiagrams(absolutePath);
+
+            List<string> stateMachineNames = new();
+            HashSet<string> sharedEvents = new();
+
+            foreach (var diagram in diagrams)
+            {
+                if (IsIgnoredDrawIoPage(diagram.name))
+                {
+                    continue;
+                }
+
+                drawIoConverter.Edges.Clear();
+                drawIoConverter.Roots.Clear();
+                drawIoConverter.ProcessDiagramContents(diagram.xml);
+                inputSmBuilder.ConvertNodesToVertices(drawIoConverter.Roots, drawIoConverter.Edges);
+
+                var pageStateMachines = diagramVerticesProvider.GetRootVertices().OfType<StateMachine>().Select(sm => sm.Name).Distinct().ToList();
+
+                if (pageStateMachines.Count != 1)
+                {
+                    throw new ArgumentException($"draw.io page `{diagram.name}` must contain exactly one root `$STATEMACHINE:` node. Found {pageStateMachines.Count}.");
+                }
+
+                stateMachineNames.Add(pageStateMachines.Single());
+                inputSmBuilder.FindSingleStateMachine();
+                inputSmBuilder.FinishRunning();
+                sharedEvents.UnionWith(inputSmBuilder.GetStateMachine().GetEventSet());
+            }
+
+            if (stateMachineNames.Count <= 1)
+            {
+                return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
+            }
+
+            if (stateMachineNames.Distinct().Count() != stateMachineNames.Count)
+            {
+                throw new ArgumentException("When using multiple draw.io pages, each `$STATEMACHINE:` must have a unique name across the drawing.");
+            }
+
+            return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames.OrderBy(x => x).ToList(), sharedEvents: sharedEvents);
+        }
+        finally
+        {
+            discoveryRunner.GetExperimentalAccess().DiServiceProvider.Dispose();
+        }
+    }
+
+    private static bool IsIgnoredDrawIoPage(string pageName)
+    {
+        pageName = pageName.Trim();
+        return pageName.StartsWith("$notes", StringComparison.OrdinalIgnoreCase)
+            || pageName.Equals("config", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<DrawIoDiagramNode> ReadDrawIoDiagrams(string absolutePath)
+    {
+        using TextReader reader = File.OpenText(absolutePath);
+
+        if (absolutePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            return DrawIoDecoder.DecodeSvgToOriginalDiagrams(reader);
         }
 
-        HashSet<string> sharedEvents = new();
-        foreach (var name in stateMachineNames)
-        {
-            inputSmBuilder.FindStateMachineByName(name);
-            inputSmBuilder.FinishRunning();
-            sharedEvents.UnionWith(inputSmBuilder.GetStateMachine().GetEventSet());
-        }
-
-        return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
+        return DrawIoDecoder.GetMxFileDiagramContents(reader.ReadToEnd());
     }
 
     private bool RunSingleStateMachine(string callerFilePath, RunnerSettings runnerSettings, HashSet<string> sharedEvents, DiagramRunInfo info)

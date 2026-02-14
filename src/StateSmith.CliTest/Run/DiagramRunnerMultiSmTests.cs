@@ -2,6 +2,7 @@ using FluentAssertions;
 using Spectre.Console.Testing;
 using StateSmith.Cli.Run;
 using StateSmith.Runner;
+using System;
 using System.IO;
 using Xunit;
 
@@ -47,4 +48,34 @@ public class DiagramRunnerMultiSmTests
             Directory.Delete(testDir, recursive: true);
         }
     }
+    [Fact]
+    public void DrawIoPageMustContainExactlyOneStateMachine()
+    {
+        string sourceDir = ExamplesHelper.GetExamplesDir();
+        string sourceDiagram = Path.Combine(sourceDir, "2-sm-invalid.drawio");
+
+        string testDir = Path.Combine(Path.GetTempPath(), "statesmith-cli-test-" + Path.GetRandomFileName());
+        Directory.CreateDirectory(testDir);
+        string testDiagram = Path.Combine(testDir, "2-sm-invalid.drawio");
+        File.Copy(sourceDiagram, testDiagram);
+
+        try
+        {
+            var diagramRunner = new DiagramRunner(
+            runConsole: new RunConsole(new TestConsole()),
+            diagramOptions: new DiagramOptions(lang: TranspilerId.C99, noSimGen: true),
+            searchDirectory: testDir,
+            runHandlerOptions: new RunHandlerOptions(currentDirectory: testDir));
+
+            var runInfoStore = new RunInfoStore(testDir);
+
+            var action = () => diagramRunner.RunDiagramFile("2-sm-invalid.drawio", testDiagram, out bool _, runInfoStore);
+            action.Should().Throw<ArgumentException>().WithMessage("*must contain exactly one root `$STATEMACHINE:` node*");
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
 }
