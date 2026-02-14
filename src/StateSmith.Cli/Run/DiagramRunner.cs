@@ -152,24 +152,25 @@ public class DiagramRunner
             return (count: 0, stateMachineNames: new List<string>(), sharedEvents: new HashSet<string>());
         }
 
-        var discoveryRunner = new SmRunner(settings: BuildBaseRunnerSettings(absolutePath), renderConfig: null, callerFilePath: callerFilePath);
+        var diagrams = ReadDrawIoDiagrams(absolutePath);
 
-        try
+        List<string> stateMachineNames = new();
+        HashSet<string> sharedEvents = new();
+
+        foreach (var diagram in diagrams)
         {
-            var inputSmBuilder = discoveryRunner.GetExperimentalAccess().InputSmBuilder;
-            var diagramVerticesProvider = discoveryRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<IDiagramVerticesProvider>();
-            var drawIoConverter = discoveryRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<DrawIoToSmDiagramConverter>();
-            var diagrams = ReadDrawIoDiagrams(absolutePath);
-
-            List<string> stateMachineNames = new();
-            HashSet<string> sharedEvents = new();
-
-            foreach (var diagram in diagrams)
+            if (IsIgnoredDrawIoPage(diagram.name))
             {
-                if (IsIgnoredDrawIoPage(diagram.name))
-                {
-                    continue;
-                }
+                continue;
+            }
+
+            var pageRunner = new SmRunner(settings: BuildBaseRunnerSettings(absolutePath), renderConfig: null, callerFilePath: callerFilePath);
+
+            try
+            {
+                var inputSmBuilder = pageRunner.GetExperimentalAccess().InputSmBuilder;
+                var diagramVerticesProvider = pageRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<IDiagramVerticesProvider>();
+                var drawIoConverter = pageRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<DrawIoToSmDiagramConverter>();
 
                 drawIoConverter.Edges.Clear();
                 drawIoConverter.Roots.Clear();
@@ -188,23 +189,23 @@ public class DiagramRunner
                 inputSmBuilder.FinishRunning();
                 sharedEvents.UnionWith(inputSmBuilder.GetStateMachine().GetEventSet());
             }
-
-            if (stateMachineNames.Count <= 1)
+            finally
             {
-                return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
+                pageRunner.GetExperimentalAccess().DiServiceProvider.Dispose();
             }
-
-            if (stateMachineNames.Distinct().Count() != stateMachineNames.Count)
-            {
-                throw new ArgumentException("When using multiple draw.io pages, each `$STATEMACHINE:` must have a unique name across the drawing.");
-            }
-
-            return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames.OrderBy(x => x).ToList(), sharedEvents: sharedEvents);
         }
-        finally
+
+        if (stateMachineNames.Count <= 1)
         {
-            discoveryRunner.GetExperimentalAccess().DiServiceProvider.Dispose();
+            return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
         }
+
+        if (stateMachineNames.Distinct().Count() != stateMachineNames.Count)
+        {
+            throw new ArgumentException("When using multiple draw.io pages, each `$STATEMACHINE:` must have a unique name across the drawing.");
+        }
+
+        return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames.OrderBy(x => x).ToList(), sharedEvents: sharedEvents);
     }
 
     private static bool IsIgnoredDrawIoPage(string pageName)
