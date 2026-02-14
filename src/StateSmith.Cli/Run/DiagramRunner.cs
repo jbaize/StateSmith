@@ -1,8 +1,11 @@
 using StateSmith.Output;
 using StateSmith.Runner;
+using StateSmith.SmGraph;
+using StateSmith.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace StateSmith.Cli.Run;
 
@@ -96,15 +99,82 @@ public class DiagramRunner
     {
         string callerFilePath = CurrentDirectory + "/";  // Slash needed for fix of https://github.com/StateSmith/StateSmith/issues/345
 
+        var info = new DiagramRunInfo(absolutePath: absolutePath);
+        runInfoStore.diagramRuns[absolutePath] = info; // will overwrite if already exists
+
+        _runConsole.WriteLine($"Running diagram: `{shortPath}`");
+
+        var multiSmRunData = BuildMultiSmRunData(callerFilePath, absolutePath);
+        if (multiSmRunData.count == 0)
+        {
+            multiSmRunData = new(count: 1, stateMachineNames: new(), sharedEvents: new());
+        }
+
+        diagramRan = false;
+
+        for (int i = 0; i < multiSmRunData.count; i++)
+        {
+            var runnerSettings = BuildBaseRunnerSettings(absolutePath);
+            runnerSettings.stateMachineName = multiSmRunData.stateMachineNames.ElementAtOrDefault(i);
+            runnerSettings.simulation.enableGeneration = i == 0 && !_diagramOptions.NoSimGen;
+
+            bool ranSingleSm = RunSingleStateMachine(callerFilePath, runnerSettings, multiSmRunData.sharedEvents, info);
+
+            if (!ranSingleSm)
+            {
+                diagramRan = false;
+                return;
+            }
+
+            diagramRan = true;
+        }
+
+        info.success = diagramRan;
+        if (diagramRan)
+        {
+            info.lastCodeGenEndDateTime = DateTime.Now;
+        }
+    }
+
+    private RunnerSettings BuildBaseRunnerSettings(string absolutePath)
+    {
         RunnerSettings runnerSettings = new(diagramFile: absolutePath, transpilerId: _diagramOptions.Lang);
         runnerSettings.simulation.enableGeneration = !_diagramOptions.NoSimGen; // enabled by default
         runnerSettings.propagateExceptions = _runHandlerOptions.PropagateExceptions;
         runnerSettings.dumpErrorsToFile = _runHandlerOptions.DumpErrorsToFile;
+        return runnerSettings;
+    }
 
-        var info = new DiagramRunInfo(absolutePath: absolutePath);
-        runInfoStore.diagramRuns[absolutePath] = info; // will overwrite if already exists
+    private (int count, List<string> stateMachineNames, HashSet<string> sharedEvents) BuildMultiSmRunData(string callerFilePath, string absolutePath)
+    {
+        if (!DiagramFileAssociator.IsDrawIoFile(absolutePath))
+        {
+            return new(count: 0, stateMachineNames: new(), sharedEvents: new());
+        }
 
-        // the constructor will attempt to read diagram settings from the diagram file
+        var discoveryRunner = new SmRunner(settings: BuildBaseRunnerSettings(absolutePath), renderConfig: null, callerFilePath: callerFilePath);
+        var inputSmBuilder = discoveryRunner.GetExperimentalAccess().InputSmBuilder;
+        inputSmBuilder.ConvertDiagramFileToSmVertices(absolutePath);
+
+        var stateMachineNames = inputSmBuilder.GetRootVertices().OfType<StateMachine>().Select(sm => sm.Name).OrderBy(x => x).ToList();
+        if (stateMachineNames.Count <= 1)
+        {
+            return new(count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: new());
+        }
+
+        HashSet<string> sharedEvents = new();
+        foreach (var name in stateMachineNames)
+        {
+            inputSmBuilder.FindStateMachineByName(name);
+            inputSmBuilder.FinishRunning();
+            sharedEvents.UnionWith(inputSmBuilder.GetStateMachine().GetEventSet());
+        }
+
+        return new(count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
+    }
+
+    private bool RunSingleStateMachine(string callerFilePath, RunnerSettings runnerSettings, HashSet<string> sharedEvents, DiagramRunInfo info)
+    {
         SmRunner smRunner = new(settings: runnerSettings, renderConfig: null, callerFilePath: callerFilePath);
         smRunner.GetExperimentalAccess().DiServiceProvider.AddSingletonT<ICodeFileWriter, LoggingCodeFileWriter>();
 
@@ -116,25 +186,27 @@ public class DiagramRunner
             throw new Exception("Should not get here.");
         }
 
-        _runConsole.WriteLine($"Running diagram: `{shortPath}`");
-
         if (runnerSettings.transpilerId == TranspilerId.NotYetSet)
         {
             _runConsole.WarnMarkupLine($"Ignoring diagram as no language specified `--lang` and no transpiler ID found in diagram.");
             warningCount++;
-            diagramRan = false;
-            return; //!!!!!!!!!!! NOTE the return here.
+            return false;
         }
 
-        // note that this cast above is OK because we registered the LoggingCodeFileWriter above
         LoggingCodeFileWriter loggingCodeFileWriter = (LoggingCodeFileWriter)smRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<ICodeFileWriter>();
+
+        if (sharedEvents.Count > 0)
+        {
+            smRunner.SmTransformer.InsertAfterFirstMatch(StandardSmTransformer.TransformationId.Standard_AddUsedEventsToSm, sm =>
+            {
+                sm._events.AddRange(sharedEvents);
+            });
+        }
 
         try
         {
-            diagramRan = true;
             smRunner.Run();
-            info.success = true;
-            info.lastCodeGenEndDateTime = DateTime.Now;
+            return true;
         }
         finally
         {
