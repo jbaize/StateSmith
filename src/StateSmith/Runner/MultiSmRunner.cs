@@ -36,14 +36,14 @@ public class MultiSmRunner
 
     /// <summary>
     /// Runs code generation for all state machines in a diagram file with a shared event enum.
-    /// Phase A: Discovers SMs, transforms each, and collects all events into a SharedEventSet.
+    /// Phase A: Discovers SMs, reads pre-diagram settings (transpilerId from toml), collects all events.
     /// Phase B: Runs full SmRunner for each SM with the SharedEventSet injected.
     /// </summary>
     public static void Run(string diagramPath, TranspilerId transpilerId, string callerFilePath,
         bool propagateExceptions = false, bool dumpErrorsToFile = false, bool enableSimGen = true,
         Action<SmRunner>? configureRunner = null)
     {
-        // Phase A: Discover SM names and collect all events
+        // Phase A: Discover SM names
         var smNames = DiscoverStateMachineNames(diagramPath);
 
         if (smNames.Count == 0)
@@ -52,12 +52,20 @@ public class MultiSmRunner
         if (smNames.Count != smNames.Distinct().Count())
             throw new InvalidOperationException($"Duplicate state machine names found in diagram file: {diagramPath}. Each state machine must have a unique name.");
 
+        // Resolve transpilerId from diagram's $CONFIG : toml if not set via CLI.
+        // We target the first SM so PreDiagramSettingsReader can use FindStateMachineByName()
+        // instead of FindSingleStateMachine() (which throws with multiple SMs).
+        var resolvedTranspilerId = ResolveTranspilerId(diagramPath, callerFilePath, smNames[0], transpilerId);
+
+        if (resolvedTranspilerId == TranspilerId.NotYetSet)
+            throw new ArgumentException($"No language specified via --lang and no transpilerId found in diagram's $CONFIG : toml. Diagram: {diagramPath}");
+
         var sharedEvents = CollectAllEvents(diagramPath, smNames);
 
         // Phase B: Generate code for each SM with shared events
         foreach (var smName in smNames)
         {
-            var settings = new RunnerSettings(diagramFile: diagramPath, transpilerId: transpilerId);
+            var settings = new RunnerSettings(diagramFile: diagramPath, transpilerId: resolvedTranspilerId);
             settings.stateMachineName = smName;
             settings.simulation.enableGeneration = enableSimGen;
             settings.propagateExceptions = propagateExceptions;
@@ -72,6 +80,26 @@ public class MultiSmRunner
 
             runner.Run();
         }
+    }
+
+    /// <summary>
+    /// Reads pre-diagram settings (transpilerId, etc.) from the diagram by creating a
+    /// temporary SmRunner targeting a specific SM. The SmRunner constructor runs
+    /// PreDiagramSettingsReader which parses $CONFIG : toml and updates RunnerSettings.
+    /// </summary>
+    private static TranspilerId ResolveTranspilerId(string diagramPath, string callerFilePath,
+        string firstSmName, TranspilerId initialTranspilerId)
+    {
+        var settings = new RunnerSettings(diagramFile: diagramPath, transpilerId: initialTranspilerId);
+        settings.stateMachineName = firstSmName;
+
+        // SmRunner constructor runs PreDiagramSettingsReader which reads $CONFIG : toml
+        var tempRunner = new SmRunner(settings, renderConfig: null, callerFilePath: callerFilePath);
+
+        // Check if pre-diagram settings reading failed
+        tempRunner.PrintAndThrowIfPreDiagramSettingsException();
+
+        return settings.transpilerId;
     }
 
     /// <summary>

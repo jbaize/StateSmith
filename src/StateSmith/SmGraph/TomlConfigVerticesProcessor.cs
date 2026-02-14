@@ -16,18 +16,37 @@ namespace StateSmith.SmGraph;
 public class TomlConfigVerticesProcessor
 {
     TomlReader tomlReader;
+    readonly IDiagramVerticesProvider diagramVerticesProvider;
 
-    public TomlConfigVerticesProcessor(RenderConfigAllVars renderConfigAllVars, RunnerSettings smRunnerSettings)
+    public TomlConfigVerticesProcessor(RenderConfigAllVars renderConfigAllVars, RunnerSettings smRunnerSettings, IDiagramVerticesProvider diagramVerticesProvider)
     {
         tomlReader = new TomlReader(renderConfigAllVars, smRunnerSettings);
+        this.diagramVerticesProvider = diagramVerticesProvider;
     }
 
     public void Process(StateMachine sm)
     {
+        // Process toml configs from the selected SM (these are read and applied)
+        ProcessTomlConfigsInVertex(sm, readValues: true);
+
+        // Also remove toml configs from all other root-level SMs so that
+        // RenderConfigVerticesProcessor doesn't choke on them when it visits all root vertices.
+        // This is needed for multi-SM diagrams where each SM has its own $CONFIG : toml.
+        foreach (var rootVertex in diagramVerticesProvider.GetRootVertices())
+        {
+            if (rootVertex is StateMachine otherSm && otherSm != sm)
+            {
+                ProcessTomlConfigsInVertex(otherSm, readValues: false);
+            }
+        }
+    }
+
+    private void ProcessTomlConfigsInVertex(Vertex root, bool readValues)
+    {
         // we gather into a list first because we are modifying the graph
         List<ConfigOptionVertex> toProcess = new();
 
-        sm.VisitTypeRecursively<ConfigOptionVertex>(v =>
+        root.VisitTypeRecursively<ConfigOptionVertex>(v =>
         {
             if (v.name.Equals("toml", StringComparison.OrdinalIgnoreCase))
             {
@@ -43,7 +62,11 @@ public class TomlConfigVerticesProcessor
                 throw new VertexValidationException(configOptionVertex, "toml config vertices cannot have children");
             }
 
-            tomlReader.Read(configOptionVertex.value);
+            if (readValues)
+            {
+                tomlReader.Read(configOptionVertex.value);
+            }
+
             configOptionVertex.RemoveChildrenAndSelf();
         }
     }

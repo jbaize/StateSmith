@@ -112,20 +112,14 @@ public class DiagramRunner
 
         _runConsole.WriteLine($"Running diagram: `{shortPath}` (multi-SM mode: {smCount} state machines detected)");
 
-        if (_diagramOptions.Lang == TranspilerId.NotYetSet)
-        {
-            _runConsole.WarnMarkupLine($"Ignoring diagram as no language specified `--lang` and no transpiler ID found in diagram.");
-            warningCount++;
-            diagramRan = false;
-            return;
-        }
-
         var info = new DiagramRunInfo(absolutePath: absolutePath);
         runInfoStore.diagramRuns[absolutePath] = info;
 
         try
         {
             diagramRan = true;
+            // transpilerId may be NotYetSet here — MultiSmRunner.Run() will resolve it
+            // from each SM's embedded $CONFIG : toml via PreDiagramSettingsReader.
             MultiSmRunner.Run(
                 diagramPath: absolutePath,
                 transpilerId: _diagramOptions.Lang,
