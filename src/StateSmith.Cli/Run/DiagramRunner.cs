@@ -1,7 +1,6 @@
 using StateSmith.Output;
 using StateSmith.Runner;
 using StateSmith.SmGraph;
-using StateSmith.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -107,7 +106,7 @@ public class DiagramRunner
         var multiSmRunData = BuildMultiSmRunData(callerFilePath, absolutePath);
         if (multiSmRunData.count == 0)
         {
-            multiSmRunData = new(count: 1, stateMachineNames: new(), sharedEvents: new());
+            multiSmRunData = (count: 1, stateMachineNames: new List<string>(), sharedEvents: new HashSet<string>());
         }
 
         diagramRan = false;
@@ -149,17 +148,18 @@ public class DiagramRunner
     {
         if (!DiagramFileAssociator.IsDrawIoFile(absolutePath))
         {
-            return new(count: 0, stateMachineNames: new(), sharedEvents: new());
+            return (count: 0, stateMachineNames: new List<string>(), sharedEvents: new HashSet<string>());
         }
 
         var discoveryRunner = new SmRunner(settings: BuildBaseRunnerSettings(absolutePath), renderConfig: null, callerFilePath: callerFilePath);
         var inputSmBuilder = discoveryRunner.GetExperimentalAccess().InputSmBuilder;
         inputSmBuilder.ConvertDiagramFileToSmVertices(absolutePath);
 
-        var stateMachineNames = inputSmBuilder.GetRootVertices().OfType<StateMachine>().Select(sm => sm.Name).OrderBy(x => x).ToList();
+        var diagramVerticesProvider = discoveryRunner.GetExperimentalAccess().DiServiceProvider.GetInstanceOf<IDiagramVerticesProvider>();
+        var stateMachineNames = diagramVerticesProvider.GetRootVertices().OfType<StateMachine>().Select(sm => sm.Name).OrderBy(x => x).ToList();
         if (stateMachineNames.Count <= 1)
         {
-            return new(count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: new());
+            return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: new HashSet<string>());
         }
 
         HashSet<string> sharedEvents = new();
@@ -170,7 +170,7 @@ public class DiagramRunner
             sharedEvents.UnionWith(inputSmBuilder.GetStateMachine().GetEventSet());
         }
 
-        return new(count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
+        return (count: stateMachineNames.Count, stateMachineNames: stateMachineNames, sharedEvents: sharedEvents);
     }
 
     private bool RunSingleStateMachine(string callerFilePath, RunnerSettings runnerSettings, HashSet<string> sharedEvents, DiagramRunInfo info)
@@ -199,7 +199,7 @@ public class DiagramRunner
         {
             smRunner.SmTransformer.InsertAfterFirstMatch(StandardSmTransformer.TransformationId.Standard_AddUsedEventsToSm, sm =>
             {
-                sm._events.AddRange(sharedEvents);
+                sm._events.UnionWith(sharedEvents);
             });
         }
 
