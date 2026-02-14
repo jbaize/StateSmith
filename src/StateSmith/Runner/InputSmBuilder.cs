@@ -187,6 +187,18 @@ public class InputSmBuilder
     }
 
     /// <summary>
+    /// Returns the names of all state machines found in the parsed diagram.
+    /// Must be called after ConvertDiagramFileToSmVertices or equivalent.
+    /// </summary>
+    public List<string> GetAllStateMachineNames()
+    {
+        return diagramToSmConverter.rootVertices
+            .OfType<StateMachine>()
+            .Select(sm => sm.Name)
+            .ToList();
+    }
+
+    /// <summary>
     /// Step 2
     /// </summary>
     [MemberNotNull(nameof(Sm))]

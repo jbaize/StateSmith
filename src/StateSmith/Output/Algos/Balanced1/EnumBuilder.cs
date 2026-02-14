@@ -13,12 +13,14 @@ public class EnumBuilder
     private readonly NameMangler mangler;
     private readonly IStateMachineProvider stateMachineProvider;
     private readonly AlgoBalanced1Settings settings;
+    private readonly SharedEventSet? sharedEventSet;
 
-    public EnumBuilder(NameMangler mangler, IStateMachineProvider stateMachineProvider, AlgoBalanced1Settings settings)
+    public EnumBuilder(NameMangler mangler, IStateMachineProvider stateMachineProvider, AlgoBalanced1Settings settings, SharedEventSet? sharedEventSet = null)
     {
         this.mangler = mangler;
         this.stateMachineProvider = stateMachineProvider;
         this.settings = settings;
+        this.sharedEventSet = sharedEventSet;
     }
 
     public void OutputEventIdCode(OutputFile file)
@@ -57,9 +59,15 @@ public class EnumBuilder
 
     private List<string> GetNonDoEvents(out bool hadDoEvent)
     {
-        var nonDoEvents = GetSm().GetEventListCopy();
-        hadDoEvent = nonDoEvents.RemoveAll((e) => TriggerHelper.IsDoEvent(e)) > 0;
-        return nonDoEvents;
+        List<string> events;
+
+        if (sharedEventSet != null && sharedEventSet.IsActive)
+            events = sharedEventSet.GetSortedEventList();
+        else
+            events = GetSm().GetEventListCopy();
+
+        hadDoEvent = events.RemoveAll((e) => TriggerHelper.IsDoEvent(e)) > 0;
+        return events;
     }
 
     protected void OutputEventIdCount(OutputFile file, int count)

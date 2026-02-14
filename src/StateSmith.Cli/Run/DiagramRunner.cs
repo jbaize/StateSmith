@@ -94,6 +94,60 @@ public class DiagramRunner
 
     public void RunDiagramFile(string shortPath, string absolutePath, out bool diagramRan, RunInfoStore runInfoStore)
     {
+        // Auto-detect multi-SM: check if diagram has multiple state machines
+        int smCount = MultiSmRunner.CountStateMachines(absolutePath);
+
+        if (smCount > 1)
+        {
+            RunMultiSmDiagramFile(shortPath, absolutePath, out diagramRan, runInfoStore, smCount);
+            return;
+        }
+
+        RunSingleSmDiagramFile(shortPath, absolutePath, out diagramRan, runInfoStore);
+    }
+
+    private void RunMultiSmDiagramFile(string shortPath, string absolutePath, out bool diagramRan, RunInfoStore runInfoStore, int smCount)
+    {
+        string callerFilePath = CurrentDirectory + "/";
+
+        _runConsole.WriteLine($"Running diagram: `{shortPath}` (multi-SM mode: {smCount} state machines detected)");
+
+        if (_diagramOptions.Lang == TranspilerId.NotYetSet)
+        {
+            _runConsole.WarnMarkupLine($"Ignoring diagram as no language specified `--lang` and no transpiler ID found in diagram.");
+            warningCount++;
+            diagramRan = false;
+            return;
+        }
+
+        var info = new DiagramRunInfo(absolutePath: absolutePath);
+        runInfoStore.diagramRuns[absolutePath] = info;
+
+        try
+        {
+            diagramRan = true;
+            MultiSmRunner.Run(
+                diagramPath: absolutePath,
+                transpilerId: _diagramOptions.Lang,
+                callerFilePath: callerFilePath,
+                propagateExceptions: _runHandlerOptions.PropagateExceptions,
+                dumpErrorsToFile: _runHandlerOptions.DumpErrorsToFile,
+                enableSimGen: !_diagramOptions.NoSimGen,
+                configureRunner: (runner) =>
+                {
+                    runner.GetExperimentalAccess().DiServiceProvider.AddSingletonT<ICodeFileWriter, LoggingCodeFileWriter>();
+                });
+            info.success = true;
+            info.lastCodeGenEndDateTime = DateTime.Now;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    private void RunSingleSmDiagramFile(string shortPath, string absolutePath, out bool diagramRan, RunInfoStore runInfoStore)
+    {
         string callerFilePath = CurrentDirectory + "/";  // Slash needed for fix of https://github.com/StateSmith/StateSmith/issues/345
 
         RunnerSettings runnerSettings = new(diagramFile: absolutePath, transpilerId: _diagramOptions.Lang);
