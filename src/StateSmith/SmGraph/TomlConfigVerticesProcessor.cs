@@ -16,10 +16,12 @@ namespace StateSmith.SmGraph;
 public class TomlConfigVerticesProcessor
 {
     TomlReader tomlReader;
+    readonly IDiagramVerticesProvider diagramVerticesProvider;
 
-    public TomlConfigVerticesProcessor(RenderConfigAllVars renderConfigAllVars, RunnerSettings smRunnerSettings)
+    public TomlConfigVerticesProcessor(RenderConfigAllVars renderConfigAllVars, RunnerSettings smRunnerSettings, IDiagramVerticesProvider diagramVerticesProvider)
     {
         tomlReader = new TomlReader(renderConfigAllVars, smRunnerSettings);
+        this.diagramVerticesProvider = diagramVerticesProvider;
     }
 
     public void Process(StateMachine sm)
@@ -27,13 +29,24 @@ public class TomlConfigVerticesProcessor
         // we gather into a list first because we are modifying the graph
         List<ConfigOptionVertex> toProcess = new();
 
-        sm.VisitTypeRecursively<ConfigOptionVertex>(v =>
+        foreach (var root in diagramVerticesProvider.GetRootVertices())
         {
-            if (v.name.Equals("toml", StringComparison.OrdinalIgnoreCase))
+            root.VisitTypeRecursively<ConfigOptionVertex>(v =>
             {
-                toProcess.Add(v);
-            }
-        });
+                if (!v.name.Equals("toml", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                var containingSm = FindContainingStateMachine(v);
+
+                // Include global toml config (outside a state machine) and toml config inside the selected state machine.
+                if (containingSm == null || containingSm == sm)
+                {
+                    toProcess.Add(v);
+                }
+            });
+        }
 
         foreach (var configOptionVertex in toProcess)
         {
@@ -44,7 +57,30 @@ public class TomlConfigVerticesProcessor
             }
 
             tomlReader.Read(configOptionVertex.value);
-            configOptionVertex.RemoveChildrenAndSelf();
+
+            // Root-level config option vertices (like draw.io config-page `$CONFIG : toml`) can have no parent.
+            // In that case, we still want to apply TOML settings but there's nothing to detach from.
+            if (configOptionVertex.Parent != null)
+            {
+                configOptionVertex.RemoveChildrenAndSelf();
+            }
         }
+    }
+
+    private static StateMachine? FindContainingStateMachine(Vertex vertex)
+    {
+        var current = vertex.Parent;
+
+        while (current != null)
+        {
+            if (current is StateMachine sm)
+            {
+                return sm;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 }

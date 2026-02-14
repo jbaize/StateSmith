@@ -20,7 +20,7 @@ public class DiagramBasedSettingsPreventer
             // create temp settings/config objects that may get modified by special diagram nodes
             RenderConfigAllVars tempRenderConfigAllVars = new();
             RunnerSettings tempSmRunnerSettings = new();
-            var tomlConfigVerticesProcessor = new TomlConfigVerticesProcessor(tempRenderConfigAllVars, tempSmRunnerSettings);
+            var tomlConfigVerticesProcessor = new TomlConfigVerticesProcessor(tempRenderConfigAllVars, tempSmRunnerSettings, new DiagramVerticesProviderBasic(sm));
             tomlConfigVerticesProcessor.Process(sm);
             var renderConfigVerticesProcessor = new RenderConfigVerticesProcessor(tempRenderConfigAllVars, sm);
             renderConfigVerticesProcessor.Process();
