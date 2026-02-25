@@ -77,7 +77,7 @@ public class Program
         int resultCode = parserResult.MapResult(
             (RunOptions opts) =>
             {
-                PreRunNoArgError(_console, noAsk: opts.NoAsk);
+                PreRunNoArgError(_console);
                 var runUi = new RunUi(opts, _console, currentDirectory: _currentDirectory);
                 return runUi.HandleRunCommand();
             },
@@ -116,7 +116,6 @@ public class Program
                     _console.WriteLine(HeadingInfo.Default);
                     _console.WriteLine();
                     _console.WriteLine(_cliArgsParser.GetUsage());
-                    TryCheckForUpdates();
                     return ProvideMenu();
                 }
 
@@ -171,28 +170,8 @@ public class Program
         return 0;
     }
 
-    private void PreRunNoArgError(IAnsiConsole _console, bool noAsk = false)
+    private void PreRunNoArgError(IAnsiConsole _console)
     {
         _console.WriteLine(HeadingInfo.Default);
-
-        // don't ask if the user doesn't want to be asked
-        // https://github.com/StateSmith/StateSmith/issues/420
-        if (!noAsk)
-        {
-            TryCheckForUpdates();
-        }
-    }
-
-    private void TryCheckForUpdates()
-    {
-        ToolSettingsLoader loader = new(_console, _settingsPaths);
-        loader.LoadOrAskUser();
-
-        ToolUpdateChecker updateChecker = new(_console, _settingsPaths, new ThisAssemblySemVerProvider());
-        updateChecker.AskToCheckIfTime(loader.GetToolSettings());
-
-        bool printed = loader.Printed || updateChecker.Printed;
-        if (printed)
-            _console.WriteLine("\n");
     }
 }
